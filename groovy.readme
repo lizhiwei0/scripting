@@ -1,0 +1,109 @@
+public class ScriptEngineTest {
+    private Logger logger = LoggerFactory.getLogger(ScriptEngineTest.class);
+    @Test
+    public void testGroovy() throws ScriptException{
+        ScriptEngineManager manager = new ScriptEngineManager();
+        ScriptEngine engine = manager.getEngineByName("groovy");
+        Assert.assertNotNull(engine);
+
+        String script = " a.age * a.weight + a.birthday.getTime()";
+
+        Foo foo = new  Foo();
+        foo.setAge(19);
+        foo.setBirthday(new Date());
+        foo.setWeight(128.2d);
+
+        long start = System.currentTimeMillis();
+        for (int i = 0 ;i < 1000000; i++) {
+            SimpleBindings bindings = new SimpleBindings();
+            bindings.put("a",foo );
+            Object c = engine.eval(script, bindings);
+        }
+        long end = System.currentTimeMillis();
+        System.out.println("total time consume : "+(end - start) +" ms");
+    }
+
+    @Test
+    public void testGroovyCompiled() throws ScriptException{
+        ScriptEngineManager manager = new ScriptEngineManager();
+        ScriptEngine engine = manager.getEngineByName("groovy");
+        Assert.assertNotNull(engine);
+
+        Compilable compilable = (Compilable)engine;
+        CompiledScript compiledScript = compilable.compile(" a.age * a.weight + a.birthday.getTime()");
+        Foo foo = new  Foo();
+        foo.setAge(19);
+        foo.setBirthday(new Date());
+        foo.setWeight(128.2d);
+        long start = System.currentTimeMillis();
+        for (int i = 0 ;i < 1000000; i++) {
+            SimpleBindings bindings = new SimpleBindings();
+            bindings.put("a",foo );
+            Object c = compiledScript.eval(bindings);
+        }
+        long end = System.currentTimeMillis();
+        System.out.println("total time consume : "+(end - start) +" ms");
+        // logger.info(c.toString());
+        //total time consume : 7484 ms
+
+    }
+
+    @Test
+    public void testGroovyEngine() {
+        try {
+            GroovyScriptEngine groovyScriptEngine = new GroovyScriptEngine("c:/groovy");
+            Foo foo = new  Foo();
+            foo.setAge(19);
+            foo.setBirthday(new Date());
+            foo.setWeight(128.2d);
+            long start = System.currentTimeMillis();
+            for (int i =0 ; i< 100000;i++) {
+                Map ctx = new HashMap();
+                ctx.put("a",foo );
+                groovyScriptEngine.run("demoScript.groovy", new Binding(ctx));
+            }
+            long end = System.currentTimeMillis();
+            System.out.println("total time consume : "+(end - start) +" ms");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+
+investigated 3 ways to invoke goorvy in java code:
+
+1) using JSR-223 java scirpting APIs to create unified javax.scripting.ScriptEngine.
+use the ScriptEngine.eval(scrtiptContent, Bindings) to execute the script.
+
+2) using JSR-223 java scripting APis to create unified javax.scripting.ScriptEngine.
+but instead of using ScriptingEngine eval script directly. we use ScriptEngine compile the script content to a CompiledScript firstly.
+then invoke the CompiledScript with Bindings.
+
+3) using Groovy API directly.
+
+
+we found that 1)&2) is simliar. 2) is better than 1) but only have tiny advantage. 
+the bottlenet for 1) & 2) is that when invoke evl method , engine would create an Context which contains several heavy object like: PrintWriter.
+
+
+the bottlenet for 3) is that when GroovyScriptEngine run script. each time it would invoke file read operation. that's very heavy operation.
+
+
+--------------thread dump------
+
+"main" #1 prio=5 os_prio=0 tid=0x000000000227d000 nid=0x9614 runnable [0x000000000276d000]
+   java.lang.Thread.State: RUNNABLE
+	at java.io.WinNTFileSystem.getBooleanAttributes(Native Method)
+	at java.io.File.isDirectory(File.java:849)
+	at sun.net.www.protocol.file.FileURLConnection.connect(FileURLConnection.java:82)
+	at sun.net.www.protocol.file.FileURLConnection.getInputStream(FileURLConnection.java:188)
+	- locked <0x0000000772747438> (a sun.net.www.protocol.file.FileURLConnection)
+	at groovy.util.GroovyScriptEngine.verifyInputStream(GroovyScriptEngine.java:463)
+	at groovy.util.GroovyScriptEngine.openConnection(GroovyScriptEngine.java:430)
+	at groovy.util.GroovyScriptEngine.getResourceConnection(GroovyScriptEngine.java:400)
+	at groovy.util.GroovyScriptEngine.loadScriptByName(GroovyScriptEngine.java:558)
+	at groovy.util.GroovyScriptEngine.createScript(GroovyScriptEngine.java:618)
+	at groovy.util.GroovyScriptEngine.run(GroovyScriptEngine.java:605)
+	at org.lizhiwei.tester.ScriptEngineTest.testGroovyEngine(ScriptEngineTest.java:84)
